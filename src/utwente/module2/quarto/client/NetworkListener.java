@@ -8,7 +8,7 @@ public interface NetworkListener {
     void onListReceived(String listInfo);
 
     /** Game started against an opponent. */
-    void onGameStarted(String opponentName);
+    void onGameStarted(String opponentName, boolean amIStarting);
 
     /** * Opponent made a move.
      * @param index Board index where piece was placed (or -1 if first move).
@@ -21,4 +21,6 @@ public interface NetworkListener {
 
     /** Received an error message. */
     void onError(String error);
+    /** Login check for GUI */
+    default void onLoginSuccess() {}
 }

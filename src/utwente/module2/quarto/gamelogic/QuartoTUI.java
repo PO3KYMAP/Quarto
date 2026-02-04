@@ -1,8 +1,7 @@
 package utwente.module2.quarto.gamelogic;
 
 import java.util.Scanner;
-import java.util.List;
-import utwente.module2.quarto.gamelogic.*;
+import utwente.module2.quarto.ai.*;
 import utwente.module2.quarto.gamelogic.player.*;
 
 /**
@@ -35,24 +34,24 @@ public class QuartoTUI {
         Scanner input = new Scanner(System.in);
 
         while (!game.isGameover()) {
-            System.out.println(game.board); // print current board
+            System.out.println(game.getBoard()); // print current board
             Player currentPlayer = game.getTurn();
             System.out.println("It's " + currentPlayer.getName() + "'s turn.");
             Piece currentPiece = game.getCurrentPiece();
 
             if (currentPiece == null) {
                 // choose a piece for the opponent
-                Piece chosen = ((HumanPlayer) currentPlayer).determinePiece(game);
+                Piece chosen = ((AbstractPlayer) currentPlayer).determinePiece(game);
                 game.choosePiece(chosen);
             } else {
                 // place the current piece
                 System.out.println("Current piece: " + currentPiece);
-                Move move = ((HumanPlayer) currentPlayer).determineMove(game);
+                Move move = ((AbstractPlayer) currentPlayer).determineMove(game);
                 game.doMove(move);
             }
         }
 
-        System.out.println(game.board);
+        System.out.println(game.getBoard());
         if (game.getWinner() != null) {
             System.out.println("Winner: " + game.getWinner().getName());
         } else {

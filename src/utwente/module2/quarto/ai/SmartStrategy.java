@@ -1,108 +1,117 @@
 package utwente.module2.quarto.ai;
 
-import utwente.module2.quarto.ai.Strategy;
 import utwente.module2.quarto.gamelogic.*;
+import java.util.List;
+import java.util.Random;
 
 /**
- * A smarter AI strategy that tries to win or block the opponent's winning move.
- * If no immediate win or threat is present, it selects a random valid move.
+ * A smarter AI strategy.
+ * 1. Placement phase: Takes a winning move immediately if available.
+ * 2. Selection phase: Avoids giving the opponent a piece they can win with.
  */
 public class SmartStrategy implements Strategy {
 
-    /**
-     * Returns the name of the strategy.
-     *
-     * @return "Smart"
-     */
-    /*@
-      @ ensures \result.equals("Smart");
-      @*/
+    private final Random random = new Random();
+
+    /*@ ensures \result.equals("Smart"); @*/
     @Override
     public String getName() {
         return "Smart";
     }
 
     /**
-     * Determines the next move using the following logic in order:
-     * 1. If a winning move is available, take it.
-     * 2. If the opponent has a winning move next, block it.
-     * 3. Otherwise, choose a random valid move.
-     *
+     * Determines the move. Priority: Win > Random.
      * @param game the current game state
-     * @return a valid QuartoMove
+     * @return a winning move or a random valid move
      */
-    /*@
-      @ requires game != null;
-      @ ensures game.isValidMove(\result);
-      @*/
+    /*@ requires game != null;
+        ensures game.isValidMove(\result);
+    @*/
     @Override
     public Move determineMove(Game game) {
         QuartoGame qGame = (QuartoGame) game;
-        QuartoMove move;
-        int pos;
 
-        // Determine the current mark
-
-
-        // Check if there is a winning move for this player
-        Move WinningMove = isWinningMove(qGame);
-        if (WinningMove != null) {
-            return WinningMove;
+        // 1. Try to win immediately
+        Move winningMove = findWinningMove(qGame);
+        if (winningMove != null) {
+            return winningMove;
         }
 
-//        // Check if enemy has a winning move to block
-//        int EnemyWinningIndex = isWinningMoveEnemy(qGame);
-//        if (EnemyWinningIndex != -1) {
-//            return new QuartoMove(currentMark, EnemyWinningIndex);
-//        }
-//
-//        // Otherwise, pick a random valid move
-//        do {
-//            pos = (int)(Math.random() * 9);
-//            move = new QuartoMove(currentMark, pos);
-//        } while (!game.isValidMove(move));
+        // 2. Random valid move otherwise
+        List<? extends Move> validMoves = qGame.getValidMoves();
 
-        return null;
+        if (validMoves.isEmpty()) return null;
+
+        return validMoves.get(random.nextInt(validMoves.size()));
     }
 
     /**
-     * Checks if there is a move that would win the game for the current player.
-     *
+     * Determines the piece to give. Priority: Safe piece > Random.
+     * A "safe" piece is one that the opponent cannot use to win on their next turn.
      * @param game the current game state
-     * @return a winning Move if available, otherwise null
+     * @return a safe piece or a random one if all are dangerous
      */
-    /*@
-      @ requires game != null;
-      @*/
-    public Move isWinningMove(QuartoGame game) {
-        for (Move i : game.getValidMoves()) {
-            Game temp = new QuartoGame(game); // Copy current game
-            temp.doMove(i); // Simulate move
-            if (temp.getWinner() == game.getTurn()) {
-                return i; // Return winning move
+    /*@ requires game != null;
+        ensures \result != null;
+    @*/
+    @Override
+    public Piece determinePiece(Game game) {
+        QuartoGame qGame = (QuartoGame) game;
+        List<Piece> available = qGame.getAvailablePieces();
+
+        if (available.isEmpty()) {
+            return null;
+        }
+
+        for (Piece piece : available) {
+            if (isSafeToGive(qGame, piece)) {
+                return piece;
+            }
+        }
+
+        return available.get(random.nextInt(available.size()));
+    }
+
+    /**
+     * Helper method to find a winning move in the current game state.
+     * Simulates every valid move on a copy of the game board.
+     *
+     * @param game the current game state.
+     * @return the {@link Move} that results in a win, or {@code null} if no such move exists.
+     */
+    private Move findWinningMove(QuartoGame game) {
+        for (Move move : game.getValidMoves()) {
+            QuartoGame copy = new QuartoGame(game);
+            copy.doMove(move);
+            if (copy.isGameover() && copy.getWinner() != null) {
+                return move;
             }
         }
         return null;
     }
 
     /**
-     * Checks if the opponent has a winning move that should be blocked.
+     * Helper method to determine if a specific piece is safe to give to the opponent.
+     * <p>
+     * It simulates giving the piece to the opponent and then checks if the opponent
+     * has any valid move that results in a win.
      *
-     * @param game the current game state
-     * @return the index to block, or -1 if no threat exists
+     * @param originalGame the current game state.
+     * @param pieceToCheck the piece to evaluate.
+     * @return {@code true} if the opponent cannot win immediately with this piece; {@code false} otherwise.
      */
-    /*@
-      @ requires game != null;
-      @*/
-    public int isWinningMoveEnemy(QuartoGame game) {
-        for (Move i : game.getValidMoves()) {
-            Game temp = new QuartoGame(game); // Copy current game
-            temp.doMove(i); // Simulate move
-            Move WinningMove = isWinningMove((QuartoGame) temp);
-            if (WinningMove != null) {
-                return WinningMove.getIndex(); // Return index to block
+    private boolean isSafeToGive(QuartoGame originalGame, Piece pieceToCheck) {
+        QuartoGame simGame = new QuartoGame(originalGame);
+
+        simGame.setCurrentPiece(pieceToCheck);
+
+        for (Move move : simGame.getValidMoves()) {
+            QuartoGame innerCopy = new QuartoGame(simGame);
+            innerCopy.doMove(move);
+            if (innerCopy.isGameover() && innerCopy.getWinner() != null) {
+                return false;
             }
         }
-        return -1; // No immediate threat
+        return true;
     }
 }

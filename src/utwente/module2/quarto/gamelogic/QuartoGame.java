@@ -8,8 +8,7 @@ public class QuartoGame implements Game {
     public final Board board;
     public final Player[] players;
     private int currentPlayer;
-    private Piece currentPiece; // != null -> place_piece phase,
-                                // == null -> choose_piece phase
+    private Piece currentPiece;
     private final List<Piece> availablePieces;
     private Player winner;
     private boolean gameOver;
@@ -18,7 +17,7 @@ public class QuartoGame implements Game {
         this.board = new Board();
         this.players = new Player[]{p1, p2};
         this.currentPlayer = 0;
-        this.currentPiece = null; // first player chooses a piece
+        this.currentPiece = null;
         this.gameOver = false;
 
         this.availablePieces = new ArrayList<>();
@@ -28,15 +27,21 @@ public class QuartoGame implements Game {
         }
     }
 
+    /**
+     * Copy constructor.
+     * FIX: We must create a NEW ArrayList for availablePieces to avoid
+     * modifying the original game state during simulation.
+     */
     public QuartoGame(QuartoGame currentGame) {
         this.board = currentGame.board.deepCopy();
         this.players = currentGame.players;
         this.currentPlayer = currentGame.currentPlayer;
         this.currentPiece = currentGame.currentPiece;
         this.gameOver = currentGame.gameOver;
-        this.availablePieces = currentGame.availablePieces;
+        // === ИСПРАВЛЕНИЕ ЗДЕСЬ ===
+        this.availablePieces = new ArrayList<>(currentGame.availablePieces);
+        // =========================
     }
-
 
     @Override
     public boolean isGameover() {
@@ -127,7 +132,14 @@ public class QuartoGame implements Game {
 
         currentPiece = piece;
 
-        // choosing a piece ends the players turn
         currentPlayer = 1 - currentPlayer;
+    }
+
+    public void setCurrentPiece(Piece piece) {
+        currentPiece = piece;
+    }
+
+    public Board getBoard() {
+        return board;
     }
 }

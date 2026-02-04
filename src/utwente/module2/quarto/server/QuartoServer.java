@@ -9,35 +9,37 @@ import java.util.*;
 
 /**
  * The main server class for the Quarto game.
- * It manages connections and initializes the game server.
+ * Manages client connections, a single matchmaking queue, and active game sessions.
+ * Clients join the queue via QUEUE; when two are waiting, a game starts automatically.
  */
 public class QuartoServer extends SocketServer {
 
-    // All connected clients
+    /*@ private invariant clients != null;
+        private invariant matchmakingQueue != null;
+        private invariant activeGames != null;
+    @*/
+
     private final List<ClientHandler> clients = new ArrayList<>();
-
-    // Waiting queues. Key = Lobby Name Value = Client waiting.
-    private final Map<String, ClientHandler> queues = new HashMap<>();
-
-    // Active games. Key = Client Value = The GameSession.
+    private final List<ClientHandler> matchmakingQueue = new ArrayList<>();
     private final Map<ClientHandler, GameSession> activeGames = new HashMap<>();
 
-    // Lobbies where a game is currently in progress.
-    private final Set<String> activeLobbies = new HashSet<>();
-
-
     /**
-     * Constructs a new QuartoServer on the given port.
-     * @param port the port to listen on.
-     * @throws IOException if the server socket cannot be opened.
+     * Constructs a new QuartoServer listening on the specified port.
+     *
+     * @param port the port number to listen on.
+     * @throws IOException if an I/O error occurs when opening the socket.
      */
+    /*@ requires port >= 0;
+    @*/
     public QuartoServer(int port) throws IOException {
         super(port);
     }
 
     /**
      * The entry point of the server application.
-     * Prompts the user for a port and starts the server.
+     * Configures the port and starts listening for connections.
+     *
+     * @param args command line arguments.
      */
     public static void main(String[] args) {
         System.out.println("Enter port number (0 for automatic):");
@@ -53,28 +55,25 @@ public class QuartoServer extends SocketServer {
         try {
             QuartoServer server = new QuartoServer(port);
             System.out.println("Server started on port: " + server.getPort());
-
             server.acceptConnections();
-
         } catch (IOException e) {
             System.err.println("Could not start server: " + e.getMessage());
         }
     }
 
     /**
-     * Handles a new incoming connection.
-     * Creates a ClientHandler for the connection and starts receiving messages.
-     * @param socket the socket for the new connection.
+     * Accepts a new client connection and initializes a handler for it.
+     *
+     * @param socket the client socket.
      */
+    /*@ requires socket != null;
+    @*/
     @Override
     protected void handleConnection(Socket socket) {
         try {
             ClientHandler handler = new ClientHandler(socket, this);
-
             handler.start();
-
             System.out.println("New connection from: " + socket.getInetAddress());
-
         } catch (IOException e) {
             System.err.println("Error creating ClientHandler: " + e.getMessage());
             try {
@@ -83,24 +82,54 @@ public class QuartoServer extends SocketServer {
         }
     }
 
+    /**
+     * Registers a logged-in client.
+     *
+     * @param client the client handler to add.
+     */
+    /*@ requires client != null;
+        ensures clients.contains(client);
+    @*/
     public synchronized void addClient(ClientHandler client) {
         clients.add(client);
         System.out.println("[SERVER] User logged in: " + client.getUsername());
     }
 
+    /**
+     * Removes a client from the server, cleaning up queues and active games.
+     *
+     * @param client the client handler to remove.
+     */
+    /*@ requires client != null;
+        ensures !clients.contains(client);
+    @*/
     public synchronized void removeClient(ClientHandler client) {
         clients.remove(client);
-        queues.values().remove(client);
+        matchmakingQueue.remove(client);
 
         GameSession session = activeGames.get(client);
         if (session != null) {
             session.playerDisconnected(client);
             activeGames.remove(client);
+
+            ClientHandler opponent = (client == session.getPlayer1()) ? session.getPlayer2() : session.getPlayer1();
+            if (opponent != null && activeGames.containsKey(opponent)) {
+                activeGames.remove(opponent);
+            }
         }
 
         System.out.println("[SERVER] User disconnected: " + client.getUsername());
     }
 
+    /**
+     * Checks if a username is already currently in use.
+     *
+     * @param name the username to check.
+     * @return true if the username is taken, false otherwise.
+     */
+    /*@ requires name != null;
+        pure
+    @*/
     public synchronized boolean isUsernameTaken(String name) {
         for (ClientHandler client : clients) {
             if (name.equals(client.getUsername())) {
@@ -110,6 +139,12 @@ public class QuartoServer extends SocketServer {
         return false;
     }
 
+    /**
+     * Generates a delimited string of all connected usernames.
+     *
+     * @return a string containing all usernames separated by the protocol delimiter.
+     */
+    /*@ pure @*/
     public synchronized String getPlayerListString() {
         List<String> names = new ArrayList<>();
         for (ClientHandler client : clients) {
@@ -121,94 +156,74 @@ public class QuartoServer extends SocketServer {
     }
 
     /**
-     * Handles a client request to join a queue (Lobby).
-     * @param client The client requesting.
-     * @param lobbyName The name of the lobby (e.g., "Lobby1"). Empty string for default.
+     * Processes a client's request to join or leave the matchmaking queue.
+     * Sending QUEUE again removes the client from the queue.
+     * When two clients are waiting, a game is started automatically.
+     *
+     * @param client the client requesting to queue or leave.
      */
-    public synchronized void handleQueueCommand(ClientHandler client, String lobbyName) {
-        // 1. If trying to join a lobby where a game is already playing
-        if (activeLobbies.contains(lobbyName)) {
-            System.out.println("Game in process, could not connect");
-        }
-
-        // 2. If client is already in THIS queue -> remove (toggle behavior)
-        if (queues.containsKey(lobbyName) && queues.get(lobbyName) == client) {
-            queues.remove(lobbyName);
-            System.out.println(client.getUsername() + " left queue: " + lobbyName);
+    /*@ requires client != null;
+    @*/
+    public synchronized void handleQueueCommand(ClientHandler client) {
+        if (matchmakingQueue.contains(client)) {
+            matchmakingQueue.remove(client);
+            System.out.println(client.getUsername() + " left queue");
             return;
         }
 
-        // 3. Remove client from ANY other queue they might be in
-        queues.values().remove(client);
+        matchmakingQueue.add(client);
+        System.out.println(client.getUsername() + " joined queue");
 
-        // 4. Check if someone is waiting in this lobby
-        if (queues.containsKey(lobbyName)) {
-            ClientHandler opponent = queues.get(lobbyName);
-            queues.remove(lobbyName);
-
-            System.out.println("Match found in " + lobbyName + ": " + client.getUsername() + " vs " + opponent.getUsername());
-
-            // Mark lobby as active (playing)
-            if (!lobbyName.isEmpty()) {
-                activeLobbies.add(lobbyName);
-            }
-
-            startNewGame(client, opponent, lobbyName);
-
-        } else {
-            // No one waiting, put this client in queue
-            queues.put(lobbyName, client);
-            System.out.println(client.getUsername() + " joined queue: " + lobbyName);
+        if (matchmakingQueue.size() >= 2) {
+            ClientHandler player1 = matchmakingQueue.remove(0);
+            ClientHandler player2 = matchmakingQueue.remove(0);
+            System.out.println("Match found: " + player1.getUsername() + " vs " + player2.getUsername());
+            startNewGame(player1, player2);
         }
     }
 
-    private void startNewGame(ClientHandler player1, ClientHandler player2, String lobbyName) {
-        GameSession session = new GameSession(player1, player2, lobbyName);
+    /**
+     * Starts a new game session between two players.
+     *
+     * @param player1 the first player.
+     * @param player2 the second player.
+     */
+    /*@ requires player1 != null && player2 != null;
+        ensures activeGames.containsKey(player1) && activeGames.containsKey(player2);
+    @*/
+    private void startNewGame(ClientHandler player1, ClientHandler player2) {
+        GameSession session = new GameSession(player1, player2);
         activeGames.put(player1, session);
         activeGames.put(player2, session);
     }
 
-    public void handleMove(ClientHandler player, Packet packet) {
+    /**
+     * Routes a move packet to the appropriate game session.
+     *
+     * @param player the player making the move.
+     * @param packet the move packet.
+     */
+    /*@ requires player != null && packet != null;
+    @*/
+    public synchronized void handleMove(ClientHandler player, Packet packet) {
         GameSession session = activeGames.get(player);
         if (session != null) {
             session.handleMove(player, packet);
-        } else {
-
         }
     }
 
     /**
-     * Called by GameSession when a game ends.
-     * Frees up the lobby so others can see it
+     * Callback method called when a game session ends.
+     * Cleans up active game references so both players can queue again.
+     *
+     * @param p1 the first player.
+     * @param p2 the second player.
      */
-    public synchronized void onGameEnded(String lobbyName, ClientHandler p1, ClientHandler p2) {
-        if (lobbyName != null && !lobbyName.isEmpty()) {
-            activeLobbies.remove(lobbyName);
-        }
+    /*@ requires p1 != null && p2 != null;
+    @*/
+    public synchronized void onGameEnded(ClientHandler p1, ClientHandler p2) {
         activeGames.remove(p1);
         activeGames.remove(p2);
+        System.out.println("Game ended. Players " + p1.getUsername() + " and " + p2.getUsername() + " are free.");
     }
-
-    /**
-     * Returns a string representing the status of lobbies.
-     * Format: LobbyName:WaitingCount:IsPlaying
-     * Example: "Lobby1:1:false~Lobby2:0:true"
-     */
-    public synchronized String getLobbyStats() {
-        StringBuilder stats = new StringBuilder();
-
-        for (int i = 1; i <= 5; i++) {
-            String name = "Lobby #" + i;
-
-            int waiting = queues.containsKey(name) ? 1 : 0;
-            boolean isPlaying = activeLobbies.contains(name);
-
-            if (i > 1) stats.append(Protocol.DELIMITER);
-            stats.append(name)
-                    .append(":").append(waiting)
-                    .append(":").append(isPlaying);
-        }
-        return stats.toString();
-    }
-
 }

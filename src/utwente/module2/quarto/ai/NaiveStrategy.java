@@ -1,53 +1,62 @@
 package utwente.module2.quarto.ai;
 
-import utwente.module2.quarto.ai.Strategy;
 import utwente.module2.quarto.gamelogic.*;
+import java.util.List;
+import java.util.Random;
 
 /**
- * A simple AI strategy that chooses moves randomly from available positions.
+ * A simple AI strategy that chooses moves and pieces randomly.
+ * Useful for testing or easy difficulty.
  */
 public class NaiveStrategy implements Strategy {
 
-    /**
-     * Returns the name of the strategy.
-     *
-     * @return "Naive"
-     */
-    /*@
-      @ ensures \result.equals("Naive");
-      @*/
+    private final Random random = new Random();
+
+    /*@ ensures \result.equals("Naive"); @*/
     @Override
     public String getName() {
         return "Naive";
     }
 
     /**
-     * Determines a move by selecting a random empty position on the board.
-     *
+     * Selects a random valid position on the board.
      * @param game the current game state
      * @return a valid QuartoMove
      */
-    /*@
-      @ requires game != null;
-      @ ensures game.isValidMove(\result);
-      @*/
+    /*@ requires game != null;
+        ensures game.isValidMove(\result);
+    @*/
     @Override
     public Move determineMove(Game game) {
-        // Cast the generic Game to QuartoGame
         QuartoGame qGame = (QuartoGame) game;
+        Piece piece = qGame.getCurrentPiece();
 
-        QuartoMove move;
-        int pos;
+        if (piece == null) return null; // Should not happen in correct flow
 
-        // Determine the current mark
-        
+        Move move;
+        do {
+            int pos = random.nextInt(16); // 0..15
+            move = new QuartoMove(piece, pos);
+        } while (!game.isValidMove(move));
 
-//        // Keep picking random positions until a valid move is found
-//        do {
-//            pos = (int)(Math.random() * 9); // random index 0-8
-//            move = new QuartoMove(piece, pos);
-//        } while (!game.isValidMove(move));
+        return move;
+    }
 
-        return null;
+    /**
+     * Selects a random available piece.
+     * @param game the current game state
+     * @return a piece from the available list
+     */
+    /*@ requires game != null;
+        ensures \result != null;
+    @*/
+    @Override
+    public Piece determinePiece(Game game) {
+        QuartoGame qGame = (QuartoGame) game;
+        List<Piece> available = qGame.getAvailablePieces();
+
+        if (available.isEmpty()) return null;
+
+        return available.get(random.nextInt(available.size()));
     }
 }
